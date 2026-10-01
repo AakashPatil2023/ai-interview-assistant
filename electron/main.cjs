@@ -12,6 +12,16 @@ const { pathToFileURL } = require("url");
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
+// The visible name contains a colon, which Windows rejects in folder paths.
+app.setName("ServiceHostIC");
+app.setPath(
+  "userData",
+  path.join(
+    process.env.APPDATA || path.join(process.env.USERPROFILE || "", "AppData", "Roaming"),
+    "ServiceHostIC"
+  )
+);
+
 if (process.platform === "win32") {
   app.setAppUserModelId("com.aiinterview.assistant");
 }
@@ -153,6 +163,7 @@ function createWindow() {
     hasShadow: true,
     alwaysOnTop: true,
     resizable: true,
+    title: "Service Host: IC",
     skipTaskbar: true,
     icon: path.join(__dirname, "icon.ico"),
     backgroundColor: "#00000000",

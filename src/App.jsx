@@ -373,7 +373,7 @@ function App() {
             <span />
           </div>
           <div className="brand-copy">
-            <h1>Service Host IC</h1>
+            <h1>Service Host: IC</h1>
           </div>
         </div>
         <Status status={status} />
