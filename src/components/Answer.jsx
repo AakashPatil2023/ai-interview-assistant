@@ -53,7 +53,7 @@ function Answer({ text, status }) {
         </div>
       </div>
       <div className={bodyClass}>
-        {text || "Start meeting capture — suggested answers will show up here."}
+        {text || "Start listening. Suggested answers will show up here."}
       </div>
     </section>
   );

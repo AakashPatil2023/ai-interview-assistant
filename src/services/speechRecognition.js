@@ -1,3 +1,5 @@
+import { apiUrl } from "./api";
+
 function pickMimeType() {
   const candidates = [
     "audio/webm;codecs=opus",
@@ -53,12 +55,16 @@ class SpeechRecognitionService {
     this.speaking = false;
     this.silenceStartedAt = 0;
     this.speechStartedAt = 0;
+    this.recordingStartedAt = 0;
+    this.peakRms = 0;
     this.transcribing = false;
+    this.silentGain = null;
 
     this.onTranscript = null;
     this.onFinalTranscript = null;
     this.onStatusChange = null;
     this.onError = null;
+    this.onLevel = null;
 
     // Tuned for meeting / loopback levels
     this.speechThreshold = 0.008;
@@ -75,11 +81,7 @@ class SpeechRecognitionService {
 
   async acquireMeetingStream() {
     const displayStream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        width: 320,
-        height: 180,
-        frameRate: 1
-      },
+      video: true,
       audio: true
     });
 
@@ -146,11 +148,21 @@ class SpeechRecognitionService {
   }
 
   setupAnalyser(stream) {
-    this.audioContext = new AudioContext();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    this.audioContext = new AudioCtx();
     const source = this.audioContext.createMediaStreamSource(stream);
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.35;
     source.connect(this.analyser);
+
+    // A silent output keeps loopback samples flowing into the analyser.
+    this.silentGain = this.audioContext.createGain();
+    this.silentGain.gain.value = 0;
+    this.analyser.connect(this.silentGain);
+    this.silentGain.connect(this.audioContext.destination);
+
+    void this.audioContext.resume();
   }
 
   startRecorder() {
@@ -158,6 +170,8 @@ class SpeechRecognitionService {
     this.speaking = false;
     this.silenceStartedAt = 0;
     this.speechStartedAt = 0;
+    this.recordingStartedAt = Date.now();
+    this.peakRms = 0;
 
     this.recorder = new MediaRecorder(this.stream, {
       mimeType: this.mimeType
@@ -182,6 +196,7 @@ class SpeechRecognitionService {
     }
 
     const data = new Uint8Array(this.analyser.fftSize);
+    let lastLevelEmit = 0;
 
     const tick = () => {
       if (!this.shouldRestart || !this.analyser) {
@@ -198,6 +213,15 @@ class SpeechRecognitionService {
 
       const rms = Math.sqrt(sum / data.length);
       const now = Date.now();
+
+      if (rms > this.peakRms) {
+        this.peakRms = rms;
+      }
+
+      if (this.onLevel && now - lastLevelEmit > 180) {
+        lastLevelEmit = now;
+        this.onLevel(rms);
+      }
 
       if (rms >= this.speechThreshold) {
         if (!this.speaking) {
@@ -222,11 +246,14 @@ class SpeechRecognitionService {
         }
       }
 
+      const recordingFor = this.recordingStartedAt
+        ? now - this.recordingStartedAt
+        : 0;
+
       if (
-        this.speaking &&
-        this.speechStartedAt &&
-        now - this.speechStartedAt >= this.maxUtteranceMs &&
-        this.recorder?.state === "recording"
+        this.recorder?.state === "recording" &&
+        recordingFor >= this.maxUtteranceMs &&
+        this.peakRms >= this.speechThreshold
       ) {
         this.recorder.stop();
       }
@@ -239,6 +266,7 @@ class SpeechRecognitionService {
 
   async flushChunks() {
     const localChunks = this.chunks;
+    const heardSpeech = this.peakRms >= this.speechThreshold;
     this.chunks = [];
 
     const shouldContinue = this.shouldRestart;
@@ -247,7 +275,7 @@ class SpeechRecognitionService {
       this.startRecorder();
     }
 
-    if (!localChunks.length) {
+    if (!heardSpeech || !localChunks.length) {
       return;
     }
 
@@ -267,7 +295,7 @@ class SpeechRecognitionService {
     try {
       const audioBase64 = await blobToBase64(blob);
 
-      const response = await fetch("/api/transcribe", {
+      const response = await fetch(apiUrl("/api/transcribe"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -359,6 +387,7 @@ class SpeechRecognitionService {
     }
 
     this.analyser = null;
+    this.silentGain = null;
     this.recorder = null;
     this.emitStatus("idle");
   }

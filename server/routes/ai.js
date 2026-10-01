@@ -9,19 +9,21 @@ function getProvider() {
   return (process.env.LLM_PROVIDER || "grok").toLowerCase();
 }
 
-async function getAnswer(question) {
+async function getAnswer(question, options) {
   const provider = getProvider();
 
   if (provider === "gemini") {
-    return askGemini(question);
+    return askGemini(question, options);
   }
 
-  return askGrok(question);
+  return askGrok(question, options);
 }
 
 router.post("/ask", async (req, res) => {
   try {
     const question = String(req.body?.question || "").trim();
+    const imageBase64 = String(req.body?.imageBase64 || "");
+    const mimeType = String(req.body?.mimeType || "image/jpeg");
 
     if (!question) {
       return res.status(400).json({
@@ -35,7 +37,10 @@ router.post("/ask", async (req, res) => {
       });
     }
 
-    const answer = await getAnswer(question);
+    const answer = await getAnswer(question, {
+      imageBase64,
+      mimeType
+    });
 
     return res.json({ answer, provider: getProvider() });
   } catch (error) {

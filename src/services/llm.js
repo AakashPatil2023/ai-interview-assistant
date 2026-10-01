@@ -1,10 +1,16 @@
-export async function askLLM(question, { signal } = {}) {
-  const response = await fetch("/api/ask", {
+import { apiUrl } from "./api";
+
+export async function askLLM(question, { signal, imageBase64, mimeType } = {}) {
+  const response = await fetch(apiUrl("/api/ask"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({
+      question,
+      imageBase64: imageBase64 || undefined,
+      mimeType: imageBase64 ? mimeType || "image/jpeg" : undefined
+    }),
     signal
   });
 

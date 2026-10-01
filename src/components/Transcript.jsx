@@ -2,7 +2,7 @@ function Transcript({ text, onClear }) {
   return (
     <section className="panel transcript-panel">
       <div className="panel-head">
-        <h2>Heard</h2>
+        <h2>Transcript</h2>
         <div className="panel-actions">
           <button
             type="button"
@@ -15,7 +15,7 @@ function Transcript({ text, onClear }) {
         </div>
       </div>
       <div className={`panel-body${!text ? " is-placeholder" : ""}`}>
-        {text || "Waiting for teammate speech from the meeting…"}
+        {text || "Speech from the meeting will show up here."}
       </div>
     </section>
   );

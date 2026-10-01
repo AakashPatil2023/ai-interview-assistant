@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import Answer from "./components/Answer";
-import Controls from "./components/Controls";
 import Status from "./components/Status";
-import Transcript from "./components/Transcript";
 import { askLLM } from "./services/llm";
 import SpeechRecognitionService from "./services/speechRecognition";
 
 const MIN_QUESTION_LENGTH = 8;
 const ASK_DEBOUNCE_MS = 900;
+const SCREENSHOT_INTERVAL_MS = 3500;
 
 const ERROR_MESSAGES = {
   network:
@@ -23,11 +22,17 @@ const ERROR_MESSAGES = {
 };
 
 function App() {
-  const [transcript, setTranscript] = useState("");
   const [answer, setAnswer] = useState("");
   const [status, setStatus] = useState("idle");
   const [listening, setListening] = useState(false);
-  const [speechReady, setSpeechReady] = useState(true);
+  const [hearing, setHearing] = useState(false);
+  const [opacity, setOpacity] = useState(() => {
+    const saved = Number(localStorage.getItem("overlay-opacity"));
+    if (Number.isFinite(saved) && saved >= 0.35 && saved <= 1) {
+      return saved;
+    }
+    return 0.92;
+  });
 
   const speechRef = useRef(null);
   const finalsRef = useRef("");
@@ -35,6 +40,40 @@ function App() {
   const abortRef = useRef(null);
   const requestIdRef = useRef(0);
   const requestAnswerRef = useRef(null);
+  const screenRef = useRef(null);
+  const heardAtRef = useRef(0);
+  const startListeningRef = useRef(null);
+  const stopListeningRef = useRef(null);
+  const sendScreenshotRef = useRef(null);
+  const answerRef = useRef("");
+  const clearTranscriptRef = useRef(null);
+
+  function rememberScreenshot(shot) {
+    if (!shot?.base64) {
+      return null;
+    }
+
+    screenRef.current = shot;
+    return shot;
+  }
+
+  async function pullScreenshot() {
+    if (!window.electronAPI?.captureScreenshot) {
+      return screenRef.current;
+    }
+
+    try {
+      const shot = await window.electronAPI.captureScreenshot();
+      if (!shot?.base64) {
+        return screenRef.current;
+      }
+
+      return rememberScreenshot(shot);
+    } catch (error) {
+      console.error(error);
+      return screenRef.current;
+    }
+  }
 
   async function requestAnswer(question) {
     const cleaned = question.trim();
@@ -52,9 +91,17 @@ function App() {
     setStatus("thinking");
     setAnswer("Thinking...");
 
+    const shot = await pullScreenshot();
+
+    if (requestId !== requestIdRef.current) {
+      return;
+    }
+
     try {
       const nextAnswer = await askLLM(cleaned, {
-        signal: controller.signal
+        signal: controller.signal,
+        imageBase64: shot?.base64,
+        mimeType: shot?.mimeType
       });
 
       if (requestId !== requestIdRef.current) {
@@ -75,6 +122,8 @@ function App() {
   }
 
   requestAnswerRef.current = requestAnswer;
+  const pullScreenshotRef = useRef(pullScreenshot);
+  pullScreenshotRef.current = pullScreenshot;
 
   useEffect(() => {
     let speech;
@@ -83,7 +132,6 @@ function App() {
       speech = new SpeechRecognitionService();
     } catch (error) {
       console.error(error);
-      setSpeechReady(false);
       setStatus("error");
       setAnswer(
         "Meeting audio capture is not available in this environment."
@@ -115,14 +163,24 @@ function App() {
       }
     };
 
-    speech.onTranscript = ({ interim, finalText }) => {
+    speech.onTranscript = ({ finalText }) => {
       if (finalText) {
         finalsRef.current = `${finalsRef.current} ${finalText}`
           .replace(/\s+/g, " ")
           .trim();
       }
+    };
 
-      setTranscript([finalsRef.current, interim].filter(Boolean).join(" "));
+    speech.onLevel = (rms) => {
+      if (rms >= 0.008) {
+        heardAtRef.current = Date.now();
+        setHearing(true);
+        return;
+      }
+
+      if (Date.now() - heardAtRef.current > 1600) {
+        setHearing(false);
+      }
     };
 
     speech.onFinalTranscript = (text) => {
@@ -146,9 +204,25 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem("overlay-opacity", String(opacity));
+  }, [opacity]);
+
+  useEffect(() => {
+    const tick = () => {
+      void pullScreenshotRef.current?.();
+    };
+
+    tick();
+    const id = setInterval(tick, SCREENSHOT_INTERVAL_MS);
+
+    return () => {
+      clearInterval(id);
+    };
+  }, []);
+
   const clearTranscript = () => {
     finalsRef.current = "";
-    setTranscript("");
   };
 
   const startListening = async () => {
@@ -171,6 +245,55 @@ function App() {
     }
   };
 
+  async function sendScreenshot() {
+    abortRef.current?.abort();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const requestId = ++requestIdRef.current;
+
+    setStatus("thinking");
+    setAnswer("Thinking...");
+
+    const shot = await pullScreenshot();
+
+    if (requestId !== requestIdRef.current) {
+      return;
+    }
+
+    if (!shot?.base64) {
+      setAnswer("Could not capture the screen. Open the desktop overlay and try again.");
+      setStatus("error");
+      return;
+    }
+
+    try {
+      const nextAnswer = await askLLM(
+        "Read the screenshot and answer the question, problem, or code shown on screen.",
+        {
+          signal: controller.signal,
+          imageBase64: shot.base64,
+          mimeType: shot.mimeType
+        }
+      );
+
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setAnswer(nextAnswer);
+      setStatus(speechRef.current?.isListening ? "listening" : "idle");
+    } catch (error) {
+      if (error?.name === "AbortError" || requestId !== requestIdRef.current) {
+        return;
+      }
+
+      console.error(error);
+      setAnswer(error.message || "Failed to get AI answer");
+      setStatus("error");
+    }
+  }
+
   const stopListening = () => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -179,47 +302,106 @@ function App() {
     abortRef.current?.abort();
     speechRef.current?.stop();
     setListening(false);
+    setHearing(false);
     setStatus("idle");
   };
 
-  const hotkey =
-    window.electronAPI?.shortcuts?.toggleOverlay || "Ctrl+Shift+H";
+  startListeningRef.current = startListening;
+  stopListeningRef.current = stopListening;
+  sendScreenshotRef.current = sendScreenshot;
+  answerRef.current = answer;
+  clearTranscriptRef.current = clearTranscript;
+
+  useEffect(() => {
+    const offListen = window.electronAPI?.onToggleListen?.(() => {
+      if (speechRef.current?.isListening) {
+        stopListeningRef.current?.();
+        return;
+      }
+
+      void startListeningRef.current?.();
+    });
+
+    const offShot = window.electronAPI?.onSendScreenshot?.(() => {
+      void sendScreenshotRef.current?.();
+    });
+
+    const offOpacity = window.electronAPI?.onOpacityChange?.((delta) => {
+      setOpacity((current) => {
+        const next = Math.round((current + delta) * 20) / 20;
+        return Math.min(1, Math.max(0.35, next));
+      });
+    });
+
+    const offCopy = window.electronAPI?.onCopyAnswer?.(() => {
+      const text = String(answerRef.current || "").trim();
+      if (!text || text === "Thinking...") {
+        return;
+      }
+
+      void navigator.clipboard.writeText(text);
+    });
+
+    const offClear = window.electronAPI?.onClearTranscript?.(() => {
+      clearTranscriptRef.current?.();
+    });
+
+    return () => {
+      offListen?.();
+      offShot?.();
+      offOpacity?.();
+      offCopy?.();
+      offClear?.();
+    };
+  }, []);
+
+  const shortcuts = window.electronAPI?.shortcuts || {};
+  const hotkey = shortcuts.toggleOverlay || "Ctrl+Shift+H";
+  const listenKey = shortcuts.toggleListen || "Alt+Shift+L";
+  const shotKey = shortcuts.sendScreenshot || "Alt+Shift+S";
+  const moveKey = shortcuts.move || "Alt+Shift+Arrows";
+  const widthKey = shortcuts.width || "Alt+Shift+[ / ]";
+  const heightKey = shortcuts.height || "Alt+Shift+PgUp / PgDn";
+  const copyKey = shortcuts.copyAnswer || "Alt+Shift+C";
 
   return (
     <div className="app">
+      <div className="shell" style={{ "--panel-alpha": opacity }}>
       <header className="header drag-region">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
             <span />
           </div>
           <div className="brand-copy">
-            <h1>Interview Copilot</h1>
-            <p>Listens to meeting audio · hidden from share</p>
+            <h1>Service Host IC</h1>
           </div>
         </div>
         <Status status={status} />
       </header>
 
       <Answer text={answer} status={status} />
-      <Transcript text={transcript} onClear={clearTranscript} />
 
       <div className="capture-bar no-drag">
-        <p className="source-hint">
-          Captures teammate voices from meeting system audio — use headphones
-          to avoid picking up yourself
+        {listening && !hearing ? (
+          <p className="source-hint">No meeting sound yet. Unmute the call.</p>
+        ) : null}
+        <p className="footer-hint">
+          Listen <kbd>{listenKey}</kbd>
+          {" · "}
+          Shot <kbd>{shotKey}</kbd>
+          {" · "}
+          Hide <kbd>{hotkey}</kbd>
+          <br />
+          Move <kbd>{moveKey}</kbd>
+          {" · "}
+          Width <kbd>{widthKey}</kbd>
+          {" · "}
+          Height <kbd>{heightKey}</kbd>
+          <br />
+          Copy <kbd>{copyKey}</kbd>
         </p>
-        <Controls
-          listening={listening}
-          onStart={startListening}
-          onStop={stopListening}
-          disabled={!speechReady}
-        />
       </div>
-
-      <p className="footer-hint no-drag">
-        Toggle overlay <kbd>{hotkey}</kbd>
-        {" · "}Meeting audio · Whisper transcription
-      </p>
+      </div>
     </div>
   );
 }
