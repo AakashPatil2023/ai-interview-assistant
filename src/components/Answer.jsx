@@ -1,10 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function Answer({ text, status }) {
   const [copied, setCopied] = useState(false);
+  const bodyRef = useRef(null);
   const hasAnswer = Boolean(text) && text !== "Thinking...";
   const isThinking = status === "thinking" || text === "Thinking...";
   const isError = status === "error";
+
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = 0;
+    }
+  }, [text]);
+
+  useEffect(() => {
+    return window.electronAPI?.onScrollAnswer?.((direction) => {
+      const body = bodyRef.current;
+      if (!body || (direction !== -1 && direction !== 1)) {
+        return;
+      }
+
+      body.scrollBy({
+        top: direction * Math.max(80, body.clientHeight * 0.75),
+        behavior: "smooth"
+      });
+    });
+  }, []);
 
   useEffect(() => {
     if (!copied) {
@@ -52,7 +73,7 @@ function Answer({ text, status }) {
           </button>
         </div>
       </div>
-      <div className={bodyClass}>
+      <div className={bodyClass} ref={bodyRef}>
         {text || "Start listening. Suggested answers will show up here."}
       </div>
     </section>

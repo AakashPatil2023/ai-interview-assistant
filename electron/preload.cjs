@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     width: "Alt+Shift+[ / ]",
     height: "Alt+Shift+PgUp / PgDn",
     copyAnswer: "Alt+Shift+C",
+    scrollAnswer: "Alt+PgUp / PgDn",
     clearTranscript: "Alt+Shift+X"
   },
   features: {
@@ -37,6 +38,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const listener = () => callback();
     ipcRenderer.on("shortcut-copy-answer", listener);
     return () => ipcRenderer.removeListener("shortcut-copy-answer", listener);
+  },
+  onScrollAnswer: (callback) => {
+    const listener = (_event, direction) => callback(direction);
+    ipcRenderer.on("shortcut-scroll-answer", listener);
+    return () => ipcRenderer.removeListener("shortcut-scroll-answer", listener);
   },
   onClearTranscript: (callback) => {
     const listener = () => callback();

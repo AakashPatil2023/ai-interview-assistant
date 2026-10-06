@@ -1,13 +1,10 @@
-function getApiKey() {
-  const raw = process.env.GROK_API_KEY || process.env.XAI_API_KEY || "";
-  return raw.trim().replace(/^["']|["']$/g, "");
-}
+import { getApiKey } from "./llm-config.js";
 
 export async function transcribeAudio({ buffer, mimeType, filename }) {
-  const apiKey = getApiKey();
+  const apiKey = getApiKey("groq");
 
   if (!apiKey) {
-    throw new Error("GROK_API_KEY is not set in .env");
+    throw new Error("Set GROQ_API_KEY (or a Groq key in GROK_API_KEY) in .env for speech transcription");
   }
 
   if (!apiKey.startsWith("gsk_")) {

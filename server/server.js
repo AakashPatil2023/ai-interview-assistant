@@ -1,7 +1,14 @@
-import "dotenv/config";
+import envConfig from "./env.cjs";
 import cors from "cors";
 import express from "express";
 import aiRouter from "./routes/ai.js";
+
+const { envPath, error: envError } = envConfig.loadEnv();
+if (envError) {
+  console.warn(`Could not load AI configuration at ${envPath} (${envError.code || "read error"}).`);
+} else {
+  console.log(`AI configuration loaded from ${envPath}`);
+}
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;

@@ -6,9 +6,9 @@ const {
   ipcMain,
   session
 } = require("electron");
-const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
+const { resolveEnvPath } = require("../server/env.cjs");
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -113,7 +113,7 @@ function registerIpc() {
 }
 
 function packagedEnvPath() {
-  return path.join(path.dirname(process.execPath), ".env");
+  return resolveEnvPath({ packaged: true });
 }
 
 async function waitForHealth() {
@@ -140,12 +140,7 @@ async function startPackagedServer() {
     return;
   }
 
-  const envPath = packagedEnvPath();
-  if (fs.existsSync(envPath)) {
-    process.env.DOTENV_CONFIG_PATH = envPath;
-  } else {
-    console.error(`No .env next to the app: ${envPath}`);
-  }
+  process.env.DOTENV_CONFIG_PATH = packagedEnvPath();
 
   const serverPath = path.join(__dirname, "../server/server.js");
   await import(pathToFileURL(serverPath).href);
@@ -296,6 +291,9 @@ function registerShortcuts() {
   bindShortcut("Alt+Shift+]", () => resizeWindow(step, 0));
   bindShortcut("Alt+Shift+PageUp", () => resizeWindow(0, -step));
   bindShortcut("Alt+Shift+PageDown", () => resizeWindow(0, step));
+
+  bindShortcut("Alt+PageUp", () => sendToOverlay("shortcut-scroll-answer", -1));
+  bindShortcut("Alt+PageDown", () => sendToOverlay("shortcut-scroll-answer", 1));
 
   bindShortcut("Alt+Shift+C", () => sendToOverlay("shortcut-copy-answer"));
   bindShortcut("Alt+Shift+X", () => sendToOverlay("shortcut-clear-transcript"));

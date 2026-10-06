@@ -6,6 +6,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "test": "node --test server/env.test.js server/services/llm.test.js",
     "dev": "concurrently -k \"npm run server\" \"npm run react\" \"npm run electron\"",
     "react": "vite",
     "server": "node server/server.js",
@@ -23,6 +24,7 @@
       "dist/**/*",
       "electron/**/*",
       "server/**/*",
+      "!server/**/*.test.js",
       "package.json"
     ],
     "win": {

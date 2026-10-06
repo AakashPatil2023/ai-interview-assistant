@@ -1,23 +1,8 @@
 import { Router } from "express";
-import { askGemini } from "../services/gemini.js";
-import { askGrok } from "../services/grok.js";
+import { getAnswer } from "../services/llm.js";
 import { transcribeAudio } from "../services/whisper.js";
 
 const router = Router();
-
-function getProvider() {
-  return (process.env.LLM_PROVIDER || "grok").toLowerCase();
-}
-
-async function getAnswer(question, options) {
-  const provider = getProvider();
-
-  if (provider === "gemini") {
-    return askGemini(question, options);
-  }
-
-  return askGrok(question, options);
-}
 
 router.post("/ask", async (req, res) => {
   try {
@@ -37,12 +22,12 @@ router.post("/ask", async (req, res) => {
       });
     }
 
-    const answer = await getAnswer(question, {
+    const result = await getAnswer(question, {
       imageBase64,
       mimeType
     });
 
-    return res.json({ answer, provider: getProvider() });
+    return res.json(result);
   } catch (error) {
     console.error("AI /ask error:", error.message);
     return res.status(500).json({

@@ -363,6 +363,7 @@ function App() {
   const widthKey = shortcuts.width || "Alt+Shift+[ / ]";
   const heightKey = shortcuts.height || "Alt+Shift+PgUp / PgDn";
   const copyKey = shortcuts.copyAnswer || "Alt+Shift+C";
+  const scrollKey = shortcuts.scrollAnswer || "Alt+PgUp / PgDn";
 
   return (
     <div className="app">
@@ -399,6 +400,8 @@ function App() {
           Height <kbd>{heightKey}</kbd>
           <br />
           Copy <kbd>{copyKey}</kbd>
+          {" · "}
+          Scroll <kbd>{scrollKey}</kbd>
         </p>
       </div>
       </div>
